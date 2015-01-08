@@ -552,6 +552,7 @@ class CharmTest(Base):
     def test_charm_format(self):
         charm = self.repo.get('local:trusty/magic')
         self.assertEqual(charm.format_api(), {
+
             'Config': {'Options': {'debug-level': {
                 'default': False, 'type': 'boolean'}}},
             'Format': 1,

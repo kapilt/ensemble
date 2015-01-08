@@ -89,15 +89,15 @@ class Charm(Resource):
 
     @property
     def provides(self):
-        return self['metadata'].get('provides', {})
+        return self['metadata'].get('provides', {}) or {}
 
     @property
     def requires(self):
-        return self['metadata'].get('requires', {})
+        return self['metadata'].get('requires', {}) or {}
 
     @property
     def peers(self):
-        return self['metadata'].get('peers', {})
+        return self['metadata'].get('peers', {}) or {}
 
     @property
     def endpoints(self):
