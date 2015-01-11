@@ -1,17 +1,57 @@
+import logging
 import os
 import pprint
+import StringIO
+import shutil
+import tempfile
 import unittest
 
-from deployer.tests.base import TEST_OFFLINE, Base as Base_
-from deployer.utils import yaml_dump
-
-from env import (
+from ensemble import (
     Environment, CharmRepository, Service, EndpointSolver, Constraints,
+    Network, Machine, Unit, Relation, Lifecycle,
+    DeltaStream, WatchManager, Event, clone,
     parse_charm_url,
-    CharmURLError, EnvError, ConstraintError)
+    CharmURLError, EnvError, ConstraintError, yaml_dump)
+
+TEST_OFFLINE = ("DEB_BUILD_ARCH" in os.environ or "TEST_OFFLINE" in os.environ)
 
 
-class Base(Base_):
+class Base(unittest.TestCase):
+
+    def capture_logging(self, name="", level=logging.INFO,
+                        log_file=None, formatter=None):
+        if log_file is None:
+            log_file = StringIO.StringIO()
+        log_handler = logging.StreamHandler(log_file)
+        if formatter:
+            log_handler.setFormatter(formatter)
+        logger = logging.getLogger(name)
+        logger.addHandler(log_handler)
+        old_logger_level = logger.level
+        logger.setLevel(level)
+
+        @self.addCleanup
+        def reset_logging():
+            logger.removeHandler(log_handler)
+            logger.setLevel(old_logger_level)
+        return log_file
+
+    def mkdir(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        return d
+
+    def change_environment(self, **kw):
+        """
+        """
+        original_environ = dict(os.environ)
+
+        @self.addCleanup
+        def cleanup_env():
+            os.environ.clear()
+            os.environ.update(original_environ)
+
+        os.environ.update(kw)
 
     def write_local_charm(self, md, config=None):
         charm_dir = os.path.join(self.repo_dir, md['series'], md['name'])
@@ -37,7 +77,7 @@ class EnvironmentTest(Base):
     def setUp(self):
         self.repo_dir = self.mkdir()
         self.charms = CharmRepository(self.repo_dir)
-        self.env = Environment(self.charms)
+        self.env = Environment(charms=self.charms)
 
     def test_add_remove_machine(self):
         result = self.env.add_machine(u'trusty', {'mem': 2000})
@@ -263,18 +303,26 @@ class EnvironmentTest(Base):
                                       u'OpenedPorts': [],
                                       u'Subordinates': None}}})
 
-    def xtest_upgrade_service(self):
-        self.charms.add_charm('cs:~hazmat/trusty/etcd-5')
-        self.env.deploy('etcd', 'cs:~hazmat/trusty/etcd-5')
+    @unittest.skipIf(TEST_OFFLINE, "Requires network access to charm store")
+    def test_upgrade_service(self):
         self.write_local_charm({
             'name': 'etcd',
             'series': 'trusty',
             'peers': {
                 'cluster': {'interface': 'etcd-raft'}}})
-        self.env.set_charm('etcd', 'local:trusty/etcd')
+        self.charms.add_charm('cs:~hazmat/trusty/etcd-5')
+
+        self.env.deploy('etcd', 'cs:~hazmat/trusty/etcd-5')
+        self.assertRaises(
+            EnvError, self.env.set_charm, 'etcd', 'local:trusty/etcd')
+
         self.charms.add_charm('cs:~hazmat/trusty/etcd-6')
         self.env.set_charm('etcd', 'cs:~hazmat/trusty/etcd-6')
+        svc = self.env.env_get_service('etcd')
+        self.assertEqual(svc.charm_url, 'cs:~hazmat/trusty/etcd-6')
+
         self.env.set_charm('etcd', 'local:trusty/etcd', force=True)
+        self.assertEqual(svc.charm_url, 'local:trusty/etcd-1')
 
     def test_add_remove_relation(self):
         self.write_local_charm({
@@ -441,59 +489,73 @@ class EndpointSolverTest(Base):
         db, blog, pairs = self.solver.solve('db', 'blog')
         self.assertEqual(pairs, [(
             {'interface': 'mysql', 'name': u'db', 'scope': 'global',
-             'role': u'provider', 'service': 'db'},
+             'role': u'provider', 'service': 'db', 'limit': 0,
+             'optional': False},
             {'interface': 'mysql', 'name': u'backend', 'scope': 'global',
-             'role': u'requirer', 'service': 'blog'},
+             'role': u'requirer', 'service': 'blog', 'limit': 1,
+             'optional': False},
             'global')])
 
     def test_match_ambigious_provide_require(self):
         db, wiki, pairs = self.solver.solve('db', 'wiki')
         self.assertEqual(pairs, [
             ({'interface': 'mysql', 'name': 'db', 'scope': 'global',
-              'role': 'provider', 'service': 'db'},
+              'role': 'provider', 'service': 'db', 'limit': 0,
+              'optional': False},
              {'interface': 'mysql', 'name': 'db-read', 'scope': 'global',
-              'role': 'requirer', 'service': 'wiki'},
+              'role': 'requirer', 'service': 'wiki', 'limit': 1,
+              'optional': False},
              'global'),
             ({'interface': 'mysql', 'name': 'db', 'scope': 'global',
-              'role': 'provider', 'service': 'db'},
+              'role': 'provider', 'service': 'db', 'limit': 0,
+              'optional': False},
              {'interface': 'mysql', 'name': 'db-write', 'scope': 'global',
-              'role': 'requirer', 'service': 'wiki'},
+              'role': 'requirer', 'service': 'wiki', 'limit': 1,
+              'optional': False},
              'global')])
 
     def test_rel_container_scope(self):
         db, wiki, pairs = self.solver.solve('db', 'metrics')
         self.assertEqual(pairs, [
             ({'interface': 'mysql', 'name': 'db', 'scope': 'global',
-              'role': 'provider', 'service': 'db'},
+              'role': 'provider', 'service': 'db', 'limit': 0,
+              'optional': False},
              {'interface': 'mysql', 'name': 'backend', 'scope': 'container',
-              'role': 'requirer', 'service': 'metrics'},
+              'role': 'requirer', 'service': 'metrics', 'limit': 1,
+              'optional': False},
              'container')])
 
     def test_rel_name_specified(self):
         db, wiki, pairs = self.solver.solve('db:db', 'wiki:db-read')
         self.assertEqual(pairs, [
             ({'interface': 'mysql', 'name': 'db', 'scope': 'global',
-              'role': 'provider', 'service': 'db'},
+              'role': 'provider', 'service': 'db', 'limit': 0,
+              'optional': False},
              {'interface': 'mysql', 'name': 'db-read', 'scope': 'global',
-              'role': 'requirer', 'service': 'wiki'},
+              'role': 'requirer', 'service': 'wiki', 'limit': 1,
+              'optional': False},
              'global')])
 
     def test_rel_name_partial(self):
         db, wiki, pairs = self.solver.solve('db', 'wiki:db-read')
         self.assertEqual(pairs, [
             ({'interface': 'mysql', 'name': 'db', 'scope': 'global',
-              'role': 'provider', 'service': 'db'},
+              'role': 'provider', 'service': 'db', 'limit': 0,
+              'optional': False},
              {'interface': 'mysql', 'name': 'db-read', 'scope': 'global',
-              'role': 'requirer', 'service': 'wiki'},
+              'role': 'requirer', 'service': 'wiki', 'limit': 1,
+              'optional': False},
              'global')])
 
     def test_match_peer(self):
         db, db, pairs = self.solver.solve('db', 'db')
         self.assertEqual(pairs, [
-            ({'interface': 'reprap', 'name': 'cluster',
-              'role': 'peer', 'service': 'db', 'scope': 'global'},
-             {'interface': 'reprap', 'name': 'cluster',
-              'role': 'peer', 'service': 'db', 'scope': 'global'},
+            ({'interface': 'reprap', 'name': 'cluster', 'limit': 1,
+              'role': 'peer', 'service': 'db', 'scope': 'global',
+              'optional': False},
+             {'interface': 'reprap', 'name': 'cluster', 'limit': 1,
+              'role': 'peer', 'service': 'db', 'scope': 'global',
+              'optional': False},
              'global')])
 
     def test_no_match(self):
@@ -539,15 +601,16 @@ class CharmTest(Base):
 
     def test_charm_endpoints(self):
         charm = self.repo.get('local:trusty/magic')
+        self.maxDiff = None
         self.assertEqual(charm.endpoints, [
-            {'interface': 'mysql', 'name': 'db',
-             'role': 'provider', 'scope': 'global'},
-            {'interface': 'shared-fs', 'name': 'storage',
-             'role': 'requirer', 'scope': 'global'},
-            {'interface': 'reprap', 'name': 'cluster',
-             'role': 'peer', 'scope': 'global'},
-            {'interface': 'juju-info', 'name': 'juju-info',
-             'role': 'provider', 'scope': 'global'}])
+            {'interface': 'mysql', 'name': 'db', 'limit': 0,
+             'role': 'provider', 'scope': 'global', 'optional': False},
+            {'interface': 'shared-fs', 'name': 'storage', 'limit': 1,
+             'role': 'requirer', 'scope': 'global', 'optional': False},
+            {'interface': 'reprap', 'name': 'cluster', 'limit': 1,
+             'role': 'peer', 'scope': 'global', 'optional': False},
+            {'interface': 'juju-info', 'name': 'juju-info', 'limit': 0,
+             'role': 'provider', 'scope': 'global', 'optional': True}])
 
     def test_charm_format(self):
         charm = self.repo.get('local:trusty/magic')
@@ -613,6 +676,203 @@ class ConstraintTest(Base):
 
         self.assertTrue(y.satisfied_by(x))
         self.assertFalse(x.satisfied_by(y))
+
+
+class EventSerializationTest(Base):
+
+    def setUp(self):
+        self.net_a = Network('172.10.0.0', u'', 'public')
+        self.net_b = Network('192.168.0.0', u'', 'private')
+        self.repo_dir = self.mkdir()
+        self.charms = CharmRepository(self.repo_dir)
+        self.write_local_charm({
+            'name': 'etcd',
+            'series': 'trusty',
+            'peers': {
+                'cluster': {
+                    'interface': 'etcd'}}})
+
+    def _machine(self):
+        m = Machine({
+            'id': '1',
+            'public_address': self.net_a.allocate_ipv4(),
+            'private_address': self.net_b.allocate_ipv4(),
+            'agent_version': '1.20.14',
+            'series': 'trusty',
+            'constraints': Constraints.actualize(
+                {'mem': 2000, 'cpu-cores': 4}),
+            'state': Lifecycle.started,
+            'instance_state': Lifecycle.running})
+        return m
+
+    def test_machine_format(self):
+        m = self._machine()
+        evt = m.format_event()
+        self.assertEqual(evt.entity_id, '1')
+        for n in evt.data['Addresses']:
+            n.pop('Value')
+        self.assertEqual(evt.data, {
+            u'Addresses': [{u'NetworkName': u'',
+                            u'Scope': 'public',
+                            u'Type': u'ipv4'},
+                           {u'NetworkName': u'',
+                            u'Scope': 'private',
+                            u'Type': u'ipv4'}],
+            u'HardwareCharacteristics': {u'Arch': u'amd64',
+                                         u'CpuCores': 1,
+                                         u'CpuPower': 100,
+                                         u'Mem': 1740,
+                                         u'RootDisk': 8192},
+            u'Life': None,
+            u'Series': 'trusty',
+            u'Status': u'running',
+            u'StatusData': None,
+            u'StatusInfo': u'',
+            u'SupportContainersKnown': True,
+            u'SupportedContainers': ['lxc']})
+
+    def test_service_format(self):
+        charm = self.charms.get('local:trusty/etcd')
+        s = Service({
+            'name': unicode('db'),
+            'subordinate': charm.subordinate,
+            'charm_url': charm.charm_url,
+            'charm': charm,
+            'config': {},
+            'constraints': Constraints.actualize(
+                {'mem': 4000}),
+            'machine_spec': None})
+        evt = s.format_event()
+        self.assertEqual(evt.entity_id, u'db')
+
+    def test_unit_format(self):
+        u = Unit({
+            'id': 'etcd/1',
+            'state': Lifecycle.running,
+            'private_address': self.net_b.allocate_ipv4(),
+            'public_address': self.net_a.allocate_ipv4(),
+            'charm_url': u'local:trusty/etcd',
+            'series': 'trusty',
+            'machine': '2',
+            'agent_version': '1.20.10'})
+        evt = u.format_event()
+        self.assertEqual(evt.entity_id, 'etcd/1')
+        del evt.data['PublicAddress']
+        del evt.data['PrivateAddress']
+        self.assertEqual(evt.data, {
+            u'CharmUrl': u'local:trusty/etcd',
+            u'MachineId': '2',
+            u'Name': 'etcd/1',
+            u'Ports': [],
+            u'Series': 'trusty',
+            u'Service': 'etcd',
+            u'StatusData': None,
+            u'StatusInfo': u''})
+
+    def test_relation_format(self):
+        charm = self.charms.get('local:trusty/etcd')
+        ep = [p for p in charm.endpoints if p['role'] == 'peer'][0]
+        key = ('db:%s' % ep['name'])
+
+        r = Relation({
+            'key': key, 'id': 1, 'endpoints': [ep],
+            'scope': 'global', 'interface': ep['interface']})
+
+        evt = r.format_event()
+        self.assertEqual(evt.entity_id, 1)
+        self.assertEqual(evt.data, {
+            'Endpoints': [{u'Limit': 1,
+                           u'Name': u'cluster',
+                           u'Optional': False,
+                           u'Role': u'peer',
+                           u'Scope': 'global'}],
+            'Id': 1,
+            'Key': u'db:cluster'})
+
+
+class DeltaStreamTest(Base):
+
+    def test_reduce_entity(self):
+        stream = DeltaStream()
+        stream.add(Event('machine', Lifecycle.changed, '1', {'a': 1}))
+        stream.add(Event('machine', Lifecycle.changed, '1', {'b': 2}))
+        self.assertEqual(
+            list(stream), [
+                Event('machine', Lifecycle.changed, '1', {'b': 2})])
+
+    def test_reduce_remove_entity(self):
+        stream = DeltaStream()
+        stream.add(Event('machine', Lifecycle.changed, '1', {'a': 1}))
+        self.assertEqual(stream.previous['1'], None)
+        stream.add(Event('machine', Lifecycle.removed, '1', {'b': 2}))
+        self.assertEqual(list(stream), [])
+
+    def test_reduce_annotation(self):
+        stream = DeltaStream()
+        stream.add(
+            Event('annotation', Lifecycle.changed, 'service-foo', {'a': 1}))
+        stream.add(
+            Event('annotation', Lifecycle.changed, 'service-foo', {'b': 2}))
+        self.assertEqual(
+            list(stream), [
+                Event(
+                    'annotation', Lifecycle.changed, 'service-foo',
+                    {'a': 1, 'b': 2})])
+
+        self.assertEqual(
+            stream.previous['service-foo'],
+            Event('annotation', Lifecycle.changed, 'service-foo', {'a': 1}))
+
+
+class WatchManagerTest(Base):
+
+    def setUp(self):
+        self.watches = WatchManager()
+
+    def test_watch(self):
+        l = Lifecycle
+        self.watches.notify(Event('machine', l.changed, '1', {'a': 1}))
+        self.watches.notify(Event('machine', l.removed, '1', {'b': 1}))
+        self.watches.notify(Event('service', l.changed, 'svc', {'b': 1}))
+        self.watches.notify(Event('unit', l.changed, 'svc/0', {'c': 1}))
+        w = self.watches.watch()
+
+        events = iter(w)
+        changes = events.next()
+        self.maxDiff = None
+        self.assertEqual(changes, [
+            ['service', l.changed, {'b': 1}],
+            ['unit', l.changed, {'c': 1}]])
+
+        self.watches.notify(Event('unit', l.changed, 'svc/0', {'c': 2}))
+        changes = events.next()
+
+        self.assertEqual(changes, [
+            ['unit', l.changed, {'c': 2}]])
+
+        self.watches.notify(Event('unit', l.removed, 'svc/0', {}))
+        w2 = self.watches.watch()
+
+        self.assertEqual(list(w2), [[['service', l.changed, {'b': 1}]]])
+
+        changes = events.next()
+        self.assertEqual(changes, [['unit', l.removed, {}]])
+
+
+class CloneTest(Base):
+
+    def setUp(self):
+        self.env = Environment()
+
+    def test_service_relation(self):
+        self.write_local_charm({
+            'name': 'mysql',
+            'series': 'trusty',
+            'provides': {
+                'db': {
+                    'scope': 'global',
+                    'interface': 'mysql'}}})
+
 
 if __name__ == '__main__':
     import unittest
