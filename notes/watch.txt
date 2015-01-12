@@ -1,0 +1,127 @@
+unit
+
+machine
+
+[u'machine',
+ u'change',
+ {u'Addresses': [{u'NetworkName': u'',
+                  u'Scope': u'public',
+                  u'Type': u'hostname',
+                  u'Value': u'ec2-54-148-46-123.us-west-2.compute.amazonaws.com'},
+                 {u'NetworkName': u'',
+                  u'Scope': u'local-cloud',
+                  u'Type': u'hostname',
+                  u'Value': u'ip-172-31-44-238.us-west-2.compute.internal'},
+                 {u'NetworkName': u'',
+                  u'Scope': u'public',
+                  u'Type': u'ipv4',
+                  u'Value': u'54.148.46.123'},
+                 {u'NetworkName': u'',
+                  u'Scope': u'local-cloud',
+                  u'Type': u'ipv4',
+                  u'Value': u'172.31.44.238'}],
+  u'HardwareCharacteristics': {u'Arch': u'amd64',
+                               u'CpuCores': 1,
+                               u'CpuPower': 100,
+                               u'Mem': 1740,
+                               u'RootDisk': 8192},
+  u'Id': u'2',
+  u'InstanceId': u'i-76ace27c',
+  u'Jobs': [u'JobHostUnits'],
+  u'Life': u'alive',
+  u'Series': u'trusty',
+  u'Status': u'pending',
+  u'StatusData': None,
+  u'StatusInfo': u'',
+  u'SupportedContainers': None,
+  u'SupportedContainersKnown': False}]
+
+[u'machine', u'remove', {u'Status': u'stopped', u'Life': u'dead', ...}]
+
+unit
+
+[u'unit',
+
+ u'change',
+ {u'CharmURL': u'cs:trusty/ntp-6',
+  u'MachineId': u'',
+  u'Name': u'ntp/0',
+  u'Ports': [],
+  u'PrivateAddress': u'ip-172-31-23-200.us-west-2.compute.internal',
+  u'PublicAddress': u'ec2-54-149-229-178.us-west-2.compute.amazonaws.com',
+  u'Series': u'trusty',
+  u'Service': u'ntp',
+  u'Status': u'started',
+  u'StatusData': None,
+  u'StatusInfo': u''}]
+
+
+
+[u'unit',
+ u'remove',
+ {u'CharmURL': u'cs:~hazmat/trusty/etcd-6',
+  u'MachineId': u'2',
+  u'Name': u'etcd/1',
+  u'Ports': [{u'Number': 4001, u'Protocol': u'tcp'}],
+  u'PrivateAddress': u'ip-172-31-44-238.us-west-2.compute.internal',
+  u'PublicAddress': u'ec2-54-148-46-123.us-west-2.compute.amazonaws.com',
+  u'Series': u'trusty',
+  u'Service': u'etcd',
+  u'Status': u'stopped',
+  u'StatusData': None,
+  u'StatusInfo': u''}]
+
+service
+
+[u'service',
+ u'change',
+ {u'CharmURL': u'cs:~hazmat/trusty/flannel-1',
+  u'Config': {},
+  u'Constraints': {},
+  u'Exposed': False,
+  u'Life': u'alive',
+  u'MinUnits': 0,
+  u'Name': u'flannel',
+  u'OwnerTag': u'user-admin'}]
+
+relation
+
+[u'relation',
+ u'change',
+ {u'Endpoints': [{u'Relation': {u'Interface': u'etcd-raft',
+                                u'Limit': 1,
+                                u'Name': u'cluster',
+                                u'Optional': False,
+                                u'Role': u'peer',
+                                u'Scope': u'global'},
+                  u'ServiceName': u'etcd'}],
+  u'Id': 1,
+  u'Key': u'etcd:cluster'}]
+
+
+[u'relation',
+ u'change',
+ {u'Endpoints': [{u'Relation': {u'Interface': u'juju-info',
+                                u'Limit': 1,
+                                u'Name': u'juju-info',
+                                u'Optional': False,
+                                u'Role': u'requirer',
+                                u'Scope': u'container'},
+                  u'ServiceName': u'ntp'},
+                 {u'Relation': {u'Interface': u'juju-info',
+                                u'Limit': 0,
+                                u'Name': u'juju-info',
+                                u'Optional': False,
+                                u'Role': u'provider',
+                                u'Scope': u'container'},
+                  u'ServiceName': u'etcd'}],
+  u'Id': 2,
+  u'Key': u'ntp:juju-info etcd:juju-info'}]
+
+
+annotation
+
+[u'annotation',
+ u'change',
+ {u'Annotations': {u'premium': u'True', u'staging': u'1', u'testing': u'a'},
+  u'Tag': u'service-ntp'}]

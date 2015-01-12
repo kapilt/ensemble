@@ -1,29 +1,33 @@
+# -*- coding: latin-1 -*-
+# ensemble
+#
+# Copyright © Kapil Thangavelu
+# Author: Kapil Thangavelu <kapil.foss@gmail.com>
+#
+# See COPYING file for details.
+#
+
 """
 An in-memory environment implementation that responds to a large
 subset of the juju client api.
 
-TODO / Features
+A primary goal is to provide a more effective testing backend
+for other tools using python for api based applications.
 
-X - config default values
-X - machine_spec
-X   - containers
-X   - placement
-X - constraints
-x    - deploy to non dirty machine satisifying constraints
-x - subordinates
-x - peer relations on deploy
-X - use network address tuple
-X - watches
-X - upgrade service
-X    - upgrade units
- - update_service
- - info
+Features
 
- - upgrade environment
+  - Supports containers, placement, subordinates, constraints,
+    store and local charms, watches, upgrades, relations, status,
+    config, etc.
+
+TODO
+
  - separate out env config into mutable/read-only
 
 TODO / API Compatibility (py jujuclient.py)
 
+ - info
+ - upgrade_environment
  - add_local_charm
  - add_charm
  - get_constraints
@@ -32,11 +36,6 @@ TODO / API Compatibility (py jujuclient.py)
  - retry_provisioning
  - valid_relation_names
  - get_public_address
-
-
-# Part of jujuclient.py api / not core
-# wait_for_units
-# wait_for_no_machines
 
 TODO / API Compatibilty core (also needs jujuclient.py impl)
 
@@ -87,11 +86,7 @@ TODO / API Compatibilty core (also needs jujuclient.py impl)
      - user_info
      - set_password
 
-Future compatibilty
- - networking
- - storage
-
-maybe
+Maybe
 
  - annotations stored on model objects / (for auto-gc)
  - owner support on objects
@@ -99,6 +94,15 @@ maybe
  - transactions (not in core yet..) but needed.
  - container constraints (per above)
  - subordinate removal (per above)
+
+Clone Support
+
+ - needs hw to constraints translation
+ - download local charm
+ - going to need a cache / location ~/.juju/sync-cache
+
+ - {'src': '', 'src-uuid': ''}
+ - machine {'src-uuid': '', 'src-mid': '0'}
 """
 import collections
 import contextlib
@@ -127,8 +131,6 @@ except ImportError:
             return "<Env Error - Details:\n %s >" % (
                 stream.getvalue())
 
-
-#from deployer.utils import yaml_load
 try:
     from yaml import CSafeLoader, CSafeDumper
     SafeLoader, SafeDumper = CSafeLoader, CSafeDumper
@@ -430,7 +432,7 @@ class Service(Resource):
 
         return Event(
             'service', change, self.name,
-            {u'CharmUrl': self['charm'],
+            {u'CharmURL': self['charm_url'],
              u'Name': self['name'],
              u'Exposed': self.exposed,
              u'Life': Lifecycle.alive,
@@ -614,7 +616,7 @@ ENV_CONFIG_DEFAULT = {
 
 
 class Sync(object):
-    """
+    """ NOTE: Sync is Not Complete
     TODO:
        - Capturing co-located placement
        - Options for removing
@@ -654,6 +656,7 @@ class Sync(object):
 
 
 def clone(env):
+    # TODO
     clone = Environment()
     handler = DeltaApplyHandler(clone)
     handler(event_stream(env))
@@ -681,25 +684,36 @@ class DeltaApplyHandler(object):
     def dispatch(self, change):
         if self.status is None:
             self.status = self.env.status()
-        key = "handle_%s_%s" % (change.kind, change.change)
+
+        change.insert(2, None)
+        change = Event(*change)
+        key = "handle_%s_%s" % (change.type, change.change)
         method = getattr(self, key, None)
 
         if not method:
             raise ValueError("No handler for %s" % key)
 
-        c = getattr(self, method)
-        c(change)
+        method(change)
 
-    def handle_service_changed(self, change):
-        self.env.update_service(change.data)
+    def handle_machine_change(self, change):
+        data = change.data['HardwareCharacteristics']
+        #TODO for sync handler/ when we support placement
+
+    def handle_service_change(self, change):
+        svc_name = change.data['Name']
+        if not svc_name in self.status['Services']:
+            self.env.deploy(
+                svc_name, change.data['CharmURL'])
+        else:
+            self.env.update_service(change.data)
 
     def handle_service_removed(self, change):
         self.env.destroy_service(change)
 
-    def handle_unit_changed(self, changed):
+    def handle_unit_change(self, changed):
         u_name = changed.data['Name']
         svc_name = u_name.split('/')[0]
-        units = self.status['Services'].get(svc_name, {}).get('Units')
+        units = self.status['Services'].get(svc_name, {}).get('Units', [])
         if u_name not in units:
             self.env.add_unit(svc_name)
 
@@ -793,11 +807,11 @@ class Watch(object):
     def noop(self):
         pass
 
-    start = reconnect = None
+    start = reconnect = noop
 
     def stop(self):
         if self.wid in self.mgr.watches:
-            del self.mgr[self.wid]
+            del self.mgr.watches[self.wid]
 
     def _notify(self, evt):
         if not self.running:
@@ -1262,8 +1276,9 @@ class Environment(object):
         self._watches.notify(svc.format_event())
         return {}
 
-    def add_unit(self, service_name, machine_spec=None):
-        self._add_unit(service_name, machine_spec)
+    def add_unit(self, service_name, machine_spec=None, count=1):
+        for i in range(count):
+            self._add_unit(service_name, machine_spec)
 
     def _add_unit(self, service_name, machine_spec=None, _subadd=False):
 

@@ -1,3 +1,11 @@
+# -*- coding: latin-1 -*-
+# ensemble
+#
+# Copyright © Kapil Thangavelu
+# Author: Kapil Thangavelu <kapil.foss@gmail.com>
+#
+# See COPYING file for details.
+#
 import logging
 import os
 import pprint
@@ -743,7 +751,18 @@ class EventSerializationTest(Base):
                 {'mem': 4000}),
             'machine_spec': None})
         evt = s.format_event()
+        self.maxDiff = None
         self.assertEqual(evt.entity_id, u'db')
+        self.assertEqual(
+            evt.data,
+            {'CharmUrl': 'local:trusty/etcd-0',
+             'Config': {},
+             'Constraints': {'mem': 4000},
+             'Exposed': False,
+             'MinUnits': 0,
+             'Life': 'alive',
+             'Name': 'db',
+             'OwnerTag': 'user-admin'})
 
     def test_unit_format(self):
         u = Unit({
@@ -862,9 +881,9 @@ class WatchManagerTest(Base):
 class CloneTest(Base):
 
     def setUp(self):
-        self.env = Environment()
-
-    def test_service_relation(self):
+        self.repo_dir = self.mkdir()
+        self.charms = CharmRepository(self.repo_dir)
+        self.env = Environment(charms=self.charms)
         self.write_local_charm({
             'name': 'mysql',
             'series': 'trusty',
@@ -872,7 +891,27 @@ class CloneTest(Base):
                 'db': {
                     'scope': 'global',
                     'interface': 'mysql'}}})
+        self.write_local_charm({
+            'name': 'wordpress',
+            'series': 'trusty',
+            'requires': {
+                'backend': {
+                    'interface': 'mysql'}}})
+        self.write_local_charm({
+            'name': 'metrics',
+            'series': 'trusty',
+            'subordinate': True,
+            'requires': {
+                'host': {
+                    'interface': 'juju-info'}}})
 
+    def xtest_service_relation(self):
+        self.env.deploy('db', 'local:trusty/mysql')
+        self.env.deploy('blog', 'local:trusty/wordpress')
+        self.env.add_relation('db', 'blog')
+        self.env.add_unit('blog', count=3)
+        env = clone(self.env)
+        self.assertEqual(env.status(), {})
 
 if __name__ == '__main__':
     import unittest

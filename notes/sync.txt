@@ -1,0 +1,27 @@
+
+
+ Services upgraded out of band.
+
+ Machines removed / units removed
+
+Local Client State
+  ~/.juju/sync/$(src-env-uuid)-$(tgt-env-uuid)
+
+Charm Repository
+
+Annotate
+--------
+
+ A sync has state, chief among that is identity.
+   sync has uuid -> [
+      local state must disambiguate]
+
+ Charms with vcs revision info
+
+ Machines with sync mid, sync id
+
+ Services with sync id
+
+ Units with sync id
+
+ 
