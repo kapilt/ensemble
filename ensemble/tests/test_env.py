@@ -6,15 +6,13 @@
 #
 # See COPYING file for details.
 #
-import logging
 import os
 import pprint
-import StringIO
 import shutil
 import tempfile
 import unittest
 
-from ensemble import (
+from ensemble.ensemble import (
     Environment, CharmRepository, Service, EndpointSolver, Constraints,
     Network, Machine, Unit, Relation, Lifecycle,
     DeltaStream, WatchManager, Event, clone,
@@ -25,24 +23,6 @@ TEST_OFFLINE = ("DEB_BUILD_ARCH" in os.environ or "TEST_OFFLINE" in os.environ)
 
 
 class Base(unittest.TestCase):
-
-    def capture_logging(self, name="", level=logging.INFO,
-                        log_file=None, formatter=None):
-        if log_file is None:
-            log_file = StringIO.StringIO()
-        log_handler = logging.StreamHandler(log_file)
-        if formatter:
-            log_handler.setFormatter(formatter)
-        logger = logging.getLogger(name)
-        logger.addHandler(log_handler)
-        old_logger_level = logger.level
-        logger.setLevel(level)
-
-        @self.addCleanup
-        def reset_logging():
-            logger.removeHandler(log_handler)
-            logger.setLevel(old_logger_level)
-        return log_file
 
     def mkdir(self):
         d = tempfile.mkdtemp()
@@ -609,7 +589,6 @@ class CharmTest(Base):
 
     def test_charm_endpoints(self):
         charm = self.repo.get('local:trusty/magic')
-        self.maxDiff = None
         self.assertEqual(charm.endpoints, [
             {'interface': 'mysql', 'name': 'db', 'limit': 0,
              'role': 'provider', 'scope': 'global', 'optional': False},
@@ -751,11 +730,10 @@ class EventSerializationTest(Base):
                 {'mem': 4000}),
             'machine_spec': None})
         evt = s.format_event()
-        self.maxDiff = None
         self.assertEqual(evt.entity_id, u'db')
         self.assertEqual(
             evt.data,
-            {'CharmUrl': 'local:trusty/etcd-0',
+            {'CharmURL': 'local:trusty/etcd-0',
              'Config': {},
              'Constraints': {'mem': 4000},
              'Exposed': False,
@@ -779,7 +757,7 @@ class EventSerializationTest(Base):
         del evt.data['PublicAddress']
         del evt.data['PrivateAddress']
         self.assertEqual(evt.data, {
-            u'CharmUrl': u'local:trusty/etcd',
+            u'CharmURL': u'local:trusty/etcd',
             u'MachineId': '2',
             u'Name': 'etcd/1',
             u'Ports': [],
@@ -858,7 +836,6 @@ class WatchManagerTest(Base):
 
         events = iter(w)
         changes = events.next()
-        self.maxDiff = None
         self.assertEqual(changes, [
             ['service', l.changed, {'b': 1}],
             ['unit', l.changed, {'c': 1}]])

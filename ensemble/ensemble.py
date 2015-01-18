@@ -23,6 +23,8 @@ Features
 TODO
 
  - separate out env config into mutable/read-only
+ - unit test to test compatibility vs same ops on a real env.
+ - add test for deploy with service config
 
 TODO / API Compatibility (py jujuclient.py)
 
@@ -111,6 +113,7 @@ import os
 import pprint
 import random
 import StringIO
+import tempfile
 import urllib2
 
 import yaml
@@ -339,7 +342,7 @@ class Unit(Resource):
     def format_event(self, change=Lifecycle.changed):
         return Event(
             'unit', change, self.id,
-            {u'CharmUrl': self['charm_url'],
+            {u'CharmURL': self['charm_url'],
              u'Name': self.id,
              u'Ports': [],
              u'MachineId': self['machine'],
@@ -856,6 +859,10 @@ class Environment(object):
         self._relation_sequence = 0
         self._services = {}
         #self._watches = []
+        self._auto_cleanup_charms = False
+        if not charms or charm_dir:
+            self._auto_cleanup_charms = True
+            self._charm_dir = tempfile.mkdtemp()
         self._charms = charms or CharmRepository(charm_dir)
         self._env_version = u'1.20.14'
         self._networks = {
@@ -870,7 +877,9 @@ class Environment(object):
         return cls(*args, **kw)
 
     def close(self):
-        pass
+        if self._auto_cleanup_charms:
+            # _charm_dir variable won't even exist / attributeerror
+            shutil.rmtree(self._charm_dir)
 
     def status(self, filters=None):
         # TODO filtering
