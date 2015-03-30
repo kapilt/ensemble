@@ -14,6 +14,9 @@ setup(name='ensemble',
       license='Apache',
       test_suite="ensemble.tests.test_env",
       test_loader='unittest:TestLoader',
+      entry_points={
+          'console_scripts': [
+              'es-serve = ensemble.server.main']},
       py_modules=['ensemble'],
-      install_requires=["PyYAML"],
+      install_requires=["PyYAML", 'gevent'],
       )

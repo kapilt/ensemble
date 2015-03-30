@@ -41,7 +41,7 @@ class Base(unittest.TestCase):
 
         os.environ.update(kw)
 
-    def write_local_charm(self, md, config=None):
+    def write_local_charm(self, md, config=None, actions=None):
         charm_dir = os.path.join(self.repo_dir, md['series'], md['name'])
         if not os.path.exists(charm_dir):
             os.makedirs(charm_dir)
@@ -49,12 +49,15 @@ class Base(unittest.TestCase):
         with open(md_path, 'w') as fh:
             fh.write(yaml_dump(md))
 
-        if config is None:
-            return
+        if config is not None:
+            cfg_path = os.path.join(charm_dir, 'config.yaml')
+            with open(cfg_path, 'w') as fh:
+                fh.write(yaml_dump(config))
 
-        cfg_path = os.path.join(charm_dir, 'config.yaml')
-        with open(cfg_path, 'w') as fh:
-            fh.write(yaml_dump(config))
+        if actions is not None:
+            act_path = os.path.join(charm_dir, 'actions.yaml')
+            with open(act_path, 'w') as fh:
+                fh.write(yaml_dump(actions))
 
     def pprint(self, d):
         pprint.pprint(d)
@@ -854,41 +857,6 @@ class WatchManagerTest(Base):
         changes = events.next()
         self.assertEqual(changes, [['unit', l.removed, {}]])
 
-
-class CloneTest(Base):
-
-    def setUp(self):
-        self.repo_dir = self.mkdir()
-        self.charms = CharmRepository(self.repo_dir)
-        self.env = Environment(charms=self.charms)
-        self.write_local_charm({
-            'name': 'mysql',
-            'series': 'trusty',
-            'provides': {
-                'db': {
-                    'scope': 'global',
-                    'interface': 'mysql'}}})
-        self.write_local_charm({
-            'name': 'wordpress',
-            'series': 'trusty',
-            'requires': {
-                'backend': {
-                    'interface': 'mysql'}}})
-        self.write_local_charm({
-            'name': 'metrics',
-            'series': 'trusty',
-            'subordinate': True,
-            'requires': {
-                'host': {
-                    'interface': 'juju-info'}}})
-
-    def xtest_service_relation(self):
-        self.env.deploy('db', 'local:trusty/mysql')
-        self.env.deploy('blog', 'local:trusty/wordpress')
-        self.env.add_relation('db', 'blog')
-        self.env.add_unit('blog', count=3)
-        env = clone(self.env)
-        self.assertEqual(env.status(), {})
 
 if __name__ == '__main__':
     import unittest

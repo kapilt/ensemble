@@ -1,0 +1,84 @@
+
+# Storage Paralysis
+
+ - relational
+ - cassandra
+ - influxdb
+ - etcd (integrations)
+
+# Volume Storage
+
+ - charm storage policy
+ - service storage policy
+ - iaas volume
+ - volume attachment
+ - block devices
+ - filesystems
+## Model
+
+ - Support Service
+ - Health Checks
+ - Charm Health Checks
+ - Charm as Docker Container
+ - Charm resources
+
+## docker enterprise
+
+ - ci / cd
+ - swarm
+ - socketplane io
+ - topology / model endpoint
+ - heka log collection / docker input -> elk
+ - cadvisor
+ - mesos integation?
+
+## charm store
+
+ - acls
+ - collections
+ - multi stream collections
+
+
+machine tagging
+ -
+
+networks
+ -
+
+provisioning turning
+
+ - machine pools / auto scale groups
+ - provider
+ - cost allocation
+ - tagging
+
+Host
+
+ - provision
+ - storage manager
+ - device manager
+
+
+ci/cd infrastrucutre
+
+upgrade policies
+ - rolling upgrade
+ - stop all
+
+
+rest / kafka / storm
+
+cassandra cloud trail
+          billing
+
+-- Create 3 Hosts
+
+ -
+
+router
+
+leadership lost / central orchestrator with distributed state
+
+
+
+flux style ingest flows / uni directional data flows.
