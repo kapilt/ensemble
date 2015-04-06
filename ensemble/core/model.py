@@ -2,8 +2,8 @@
 import collections
 import random
 
-from errors import EnvError
-from utils import normalize
+from ..error import EnvError
+from ..utils import normalize
 
 
 class Lifecycle(object):

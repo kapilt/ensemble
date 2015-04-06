@@ -1,5 +1,51 @@
 
 
+from ensemble.error import EnvError
+
+from model import Lifecycle, Event
+
+
+class DeltaStream(object):
+    """The minimal set of events to represent the current environment state.
+    """
+    def __init__(self):
+        self._events = []
+        self.previous = {}
+
+    def __iter__(self):
+        return iter(self._events)
+
+    def clear(self):
+        self._events = []
+
+    def consume(self, events):
+        for e in events:
+            self.add(e)
+        return self
+
+    def add(self, evt):
+        found, found_idx = None, None
+        for i, e in enumerate(self._events):
+            if e.entity_id == evt.entity_id:
+                found_idx = i
+                found = e
+                break
+        if evt.change != Lifecycle.removed:
+            self._events.append(evt)
+        if found is None:
+            self.previous[evt.entity_id] = None
+            return
+        if found.change in (Lifecycle.removed, Lifecycle.changed):
+            p = self._events.pop(found_idx)
+            self.previous[p.entity_id] = Event(
+                p.type, p.change, p.entity_id, dict(p.data))
+
+        if evt.type == 'annotation':
+            found.data.update(evt.data)
+            evt.data.clear()
+            evt.data.update(found.data)
+
+
 class WatchManager(object):
 
     def __init__(self):

@@ -4,8 +4,8 @@ import json
 import os
 import urllib2
 
-from models import Charm
-from utils import yaml_load
+from model import Charm
+from ..utils import yaml_load
 
 
 class CharmRepository(object):

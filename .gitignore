@@ -1,2 +1,6 @@
 .coverage
 report
+bin
+*.egg-info
+local
+lib

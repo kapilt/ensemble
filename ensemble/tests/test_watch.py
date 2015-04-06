@@ -1,10 +1,41 @@
-
-from ..core.charm import CharmRepository
-from ..core.model import Lifecycle, Event
-from ..core.sync import DeltaStream, clone
-from ..core.env import Environment
-
 from base import Base
+
+from ..core.model import Lifecycle, Event
+from ..core.watch import WatchManager, DeltaStream
+
+
+class WatchManagerTest(Base):
+
+    def setUp(self):
+        self.watches = WatchManager()
+
+    def test_watch(self):
+        l = Lifecycle
+        self.watches.notify(Event('machine', l.changed, '1', {'a': 1}))
+        self.watches.notify(Event('machine', l.removed, '1', {'b': 1}))
+        self.watches.notify(Event('service', l.changed, 'svc', {'b': 1}))
+        self.watches.notify(Event('unit', l.changed, 'svc/0', {'c': 1}))
+        w = self.watches.watch()
+
+        events = iter(w)
+        changes = events.next()
+        self.assertEqual(changes, [
+            ['service', l.changed, {'b': 1}],
+            ['unit', l.changed, {'c': 1}]])
+
+        self.watches.notify(Event('unit', l.changed, 'svc/0', {'c': 2}))
+        changes = events.next()
+
+        self.assertEqual(changes, [
+            ['unit', l.changed, {'c': 2}]])
+
+        self.watches.notify(Event('unit', l.removed, 'svc/0', {}))
+        w2 = self.watches.watch()
+
+        self.assertEqual(list(w2), [[['service', l.changed, {'b': 1}]]])
+
+        changes = events.next()
+        self.assertEqual(changes, [['unit', l.removed, {}]])
 
 
 class DeltaStreamTest(Base):
@@ -39,39 +70,3 @@ class DeltaStreamTest(Base):
         self.assertEqual(
             stream.previous['service-foo'],
             Event('annotation', Lifecycle.changed, 'service-foo', {'a': 1}))
-
-
-class CloneTest(Base):
-
-    def setUp(self):
-        self.repo_dir = self.mkdir()
-        self.charms = CharmRepository(self.repo_dir)
-        self.env = Environment(charms=self.charms)
-        self.write_local_charm({
-            'name': 'mysql',
-            'series': 'trusty',
-            'provides': {
-                'db': {
-                    'scope': 'global',
-                    'interface': 'mysql'}}})
-        self.write_local_charm({
-            'name': 'wordpress',
-            'series': 'trusty',
-            'requires': {
-                'backend': {
-                    'interface': 'mysql'}}})
-        self.write_local_charm({
-            'name': 'metrics',
-            'series': 'trusty',
-            'subordinate': True,
-            'requires': {
-                'host': {
-                    'interface': 'juju-info'}}})
-
-    def xtest_service_relation(self):
-        self.env.deploy('db', 'local:trusty/mysql')
-        self.env.deploy('blog', 'local:trusty/wordpress')
-        self.env.add_relation('db', 'blog')
-        self.env.add_unit('blog', count=3)
-        env = clone(self.env)
-        self.assertEqual(env.status(), {})

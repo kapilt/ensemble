@@ -1,6 +1,6 @@
 import collections
 
-from models import CONTAINER_TYPES
+from model import CONTAINER_TYPES
 
 
 class ConstraintError(Exception):
