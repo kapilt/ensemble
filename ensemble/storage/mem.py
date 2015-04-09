@@ -23,12 +23,7 @@ class MemStorage(object):
         self._relations = []
         self._relation_sequence = 0
         self._services = {}
-        #self._watches = []
-        self._auto_cleanup_charms = False
-        if not charms or charm_dir:
-            self._auto_cleanup_charms = True
-            self._charm_dir = tempfile.mkdtemp()
-        self._charms = charms or CharmRepository(charm_dir)
+        self._charms = charms
         self._env_version = u'1.20.14'
         self._networks = {
             u'public': Network('172.10.0.0', u'', 'public'),

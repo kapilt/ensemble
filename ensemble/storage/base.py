@@ -123,6 +123,7 @@ class Environment(object):
             'state': Lifecycle.started,
             'public_address': self._networks['public'].allocate_ipv4(),
             'private_address': self._networks['private'].allocate_ipv4(),
+            'container_type': container_type,
             'constraints': Constraints.actualize(constraints),
             'instance_id': u"i-%s" % machine_id,
             'instance_state': Lifecycle.running})

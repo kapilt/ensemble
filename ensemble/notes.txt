@@ -18,7 +18,7 @@
  - topology / model endpoint
  - heka log collection / docker input -> elk
  - cadvisor
- - mesos integation?
+ - mesos integation?`
 
 ## charm store
 

@@ -1,9 +1,10 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Sequence, Boolean
+from sqlalchemy import (
+    Column, Integer, String, ForeignKey, Sequence, Boolean, and_)
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.declarative import ConcreteBase
 
-from util import JSONType
+from util import JSONType, ConstraintType
 
 Base = declarative_base()
 
@@ -14,16 +15,60 @@ class RDBStorage(object):
         self.session = session
         self.env_id = env_id
 
+    def commit(self):
+        self.session.commit()
+
+    def abort(self):
+        self.session.abort()
+
+    def _store(self, o):
+        self.session.add(o)
+        self.session.flush()
+        self.session.refresh(o)
+        return o
+
     def machines(self):
         return list(self.session.query(Machine).filter(
             Machine.environment_id == self.env_id))
+
+    def machine(self, mid):
+        return self.session.query(Machine).filter(
+            and_(Machine.environment_id == self.env_id,
+                 Machine.mid == mid)).scalar()
 
     def services(self):
         return list(self.session.query(Service).filter(
             Service.environment_id == self.env_id))
 
-#    def networks(self):
-#        return list(self.session.query(Network))
+    def service(self, name):
+        return self.session.query(Service).filter(
+            and_(Service.environment_id == self.env_id,
+                 Service.name == name)).scalar()
+
+    def relations(self):
+        return list(self.session.query(Relation).filter(
+            Relation.environment_id == self.env_id))
+
+    def annotation(self, entity_type, entity_id, key):
+        pass
+
+    # mutators
+
+    def add_machine(self, machine_data):
+        machine_data['environment_id'] = self.env_id
+        return self._store(Machine(**machine_data))
+
+    def add_unit(self, svc, m):
+        u = Unit(
+            name="%s/%s" % (svc.name, svc.unit_sequence),
+            machine=m,
+            charm_url=svc.charm.url)
+        svc.unit_sequence += 1
+        return self._store(u)
+
+    def add_service(self, service_data):
+        s = Service(**service_data)
+        return self._store(s)
 
 
 class Environment(Base):
@@ -43,7 +88,7 @@ class Service(Base):
     name = Column(String)
     charm_id = Column(Integer, ForeignKey('charms.id'))
     constraints = Column(String)
-    unit_sequence = Column(Integer)
+    unit_sequence = Column(Integer, default=0)
     subordinate = Column(Boolean)
 
     env = relationship("Environment", backref=backref('services', order_by=id))
@@ -68,9 +113,9 @@ class Unit(Base):
 
     # not a full tree, one level deep.
     parent_unit_id = Column(Integer, ForeignKey('units.id'))
+
     service = relationship('Service', backref=backref('units', order_by=id))
     machine = relationship('Machine', backref=backref('units', order_by=id))
-
     subordinates = relationship(
         'Unit', backref=backref('parent', order_by=id, remote_side=[id]))
 
@@ -109,18 +154,22 @@ class Relation(Base):
 class Machine(Base):
     __tablename__ = 'machines'
 
-    id = Column(Integer, Sequence('machine_id_seq'), primary_key=True)
-    mid = Column(String)
+    _id = Column(Integer, Sequence('machine_id_seq'), primary_key=True)
+
+    id = Column(String)
     environment_id = Column(Integer, ForeignKey('environments.id'))
 
     agent_version = Column(String)
     state = Column(String)
 
-    constraints = Column(String)
+    constraints = Column(ConstraintType)
     series = Column(String)
     image_id = Column(String)
 
+    container_seq = Column(Integer, default=0)
     container_type = Column(String)
+    container_parent_id = Column(Integer, ForeignKey('machines.id'))
+
     private_address = Column(String)
     public_address = Column(String)
 

@@ -1,3 +1,25 @@
+from __future__ import absolute_import
+
+import json
+import sqlalchemy as sa
+
+from ..core.constraint import Constraints
+
+
+class ConstraintType(sa.types.TypeDecorator):
+
+    impl = sa.UnicodeText
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        return json.dumps(value.serialize())
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        return Constraints.actualize(json.loads(value))
+
 """
 Copyright (c) 2012, Konsta Vesterinen
 All rights reserved.
@@ -24,21 +46,15 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # From https://github.com/kvesteri/sqlalchemy-utils
 
-from __future__ import absolute_import
 
 import six
-import sqlalchemy as sa
+
 from sqlalchemy.dialects.postgresql.base import ischema_names
 
 
 class ImproperlyConfigured(ValueError):
     pass
 
-json = None
-try:
-    import anyjson as json
-except ImportError:
-    import json as json
 
 try:
     from sqlalchemy.dialects.postgresql import JSON
@@ -114,4 +130,3 @@ class JSONType(sa.types.TypeDecorator):
         if value is not None:
             value = json.loads(value)
         return value
-
